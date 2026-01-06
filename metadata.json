@@ -1,0 +1,5 @@
+{
+  "name": "Traveler's Trek - 5e Tracker",
+  "description": "A Dungeons & Dragons 5th Edition travel tracking tool. Calculate travel time based on pace, track distance covered, manage forced marches, and visualize progress on a journey timeline.",
+  "requestFramePermissions": []
+}

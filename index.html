@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traveler's Trek - 5e Tracker</title>
+    
+    <!-- React & ReactDOM (UMD for standalone usage) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel Standalone to compile JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              parchment: {
+                100: '#fdf6e3',
+                200: '#eee8d5',
+                300: '#d5c4a1',
+                800: '#3c3836',
+                900: '#1d2021',
+              },
+              dragon: {
+                red: '#8f2929',
+                gold: '#d79921',
+              }
+            },
+            fontFamily: {
+              serif: ['"Cinzel"', 'serif'],
+              sans: ['"Lato"', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+      body {
+        background-color: #1d2021;
+        background-image: radial-gradient(#3c3836 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      /* Fantasy Scrollbar */
+      ::-webkit-scrollbar { width: 10px; }
+      ::-webkit-scrollbar-track { background: #d5c4a1; }
+      ::-webkit-scrollbar-thumb { background: #8f2929; border: 1px solid #3c3836; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Main Application Script -->
+    <script type="text/babel" data-presets="react,typescript">
+      const { useState, useEffect, useRef } = React;
+
+      // --- TYPES & ENUMS ---
+      // FIX: We use a const object instead of enum to ensure it exists at runtime 
+      // when using Babel Standalone in the browser.
+      const TravelPace = {
+        FAST: 'Fast',
+        NORMAL: 'Normal',
+        SLOW: 'Slow'
+      };
+
+      // --- CONSTANTS ---
+      const PACE_RULES = {
+        [TravelPace.FAST]: {
+          speed: 4,
+          milesPerDay: 30,
+          effect: "-5 penalty to passive Wisdom (Perception)"
+        },
+        [TravelPace.NORMAL]: {
+          speed: 3,
+          milesPerDay: 24,
+          effect: "None"
+        },
+        [TravelPace.SLOW]: {
+          speed: 2,
+          milesPerDay: 18,
+          effect: "Able to use stealth"
+        }
+      };
+
+      const MAX_TRAVEL_HOURS = 8;
+      const FORCED_MARCH_BASE_DC = 10;
+      const FORCED_MARCH_DC_INC = 1;
+
+      // --- COMPONENT: ProgressBar ---
+      const ProgressBar = ({ current, total }) => {
+        const percentage = Math.min(100, Math.max(0, (current / total) * 100));
+
+        return (
+          <div className="w-full relative pt-6 pb-2">
+            <div className="flex justify-between mb-1">
+              <span className="text-sm font-bold text-parchment-800 font-serif">Start</span>
+              <span className="text-sm font-bold text-parchment-800 font-serif">Destination</span>
+            </div>
+            
+            {/* Track Background */}
+            <div className="h-6 bg-parchment-300 rounded-full border-2 border-parchment-800 relative shadow-inner overflow-hidden">
+              {/* Fill */}
+              <div 
+                className="h-full bg-dragon-red transition-all duration-500 ease-out flex items-center justify-end pr-2"
+                style={{ width: `${percentage}%` }}
+              >
+                 {percentage > 5 && <span className="text-xs text-white font-bold opacity-80">{Math.round(percentage)}%</span>}
+              </div>
+              
+              {/* Distance Markers */}
+              <div className="absolute top-0 bottom-0 left-1/4 w-0.5 bg-parchment-800 opacity-20"></div>
+              <div className="absolute top-0 bottom-0 left-2/4 w-0.5 bg-parchment-800 opacity-20"></div>
+              <div className="absolute top-0 bottom-0 left-3/4 w-0.5 bg-parchment-800 opacity-20"></div>
+            </div>
+
+            {/* Avatar / Marker */}
+            <div 
+              className="absolute top-4 w-10 h-10 -ml-5 transition-all duration-500 ease-out flex items-center justify-center"
+              style={{ left: `${percentage}%` }}
+            >
+              <div className="bg-parchment-100 border-2 border-dragon-gold rounded-full p-1 shadow-lg text-xl">
+                ♟️
+              </div>
+            </div>
+            
+            <div className="text-center mt-2 font-serif text-lg text-parchment-900">
+              <span className="font-bold">{current.toFixed(1)}</span> / <span className="text-parchment-800">{total}</span> miles
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: App ---
+      const App = () => {
+        // --- STATE ---
+        const [state, setState] = useState({
+          totalDistance: 100,
+          traveledDistance: 0,
+          pace: TravelPace.NORMAL,
+          day: 1,
+          hoursTraveledToday: 0,
+          logs: [],
+          exhaustion: 0,
+        });
+
+        const [inputDistance, setInputDistance] = useState(100);
+        const logContainerRef = useRef(null);
+
+        // Auto-scroll logs
+        useEffect(() => {
+          if (logContainerRef.current) {
+            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+          }
+        }, [state.logs]);
+
+        // --- HANDLERS ---
+        const handleDistanceChange = (e) => {
+          const val = parseInt(e.target.value) || 0;
+          setInputDistance(val);
+          setState(prev => ({ ...prev, totalDistance: val }));
+        };
+
+        const handlePaceChange = (pace) => {
+          setState(prev => ({ ...prev, pace }));
+        };
+
+        const travel = (hours) => {
+          const { pace, hoursTraveledToday, day, traveledDistance } = state;
+          const speed = PACE_RULES[pace].speed;
+          const distanceCovered = hours * speed;
+          const newHoursTotal = hoursTraveledToday + hours;
+          
+          // Forced March Logic
+          const forcedHours = Math.max(0, newHoursTotal - MAX_TRAVEL_HOURS);
+          const isForcedMarch = newHoursTotal > MAX_TRAVEL_HOURS;
+          
+          let logMessage = `Traveled ${hours} hour(s) at ${pace} pace (${distanceCovered} miles).`;
+          let dc = 0;
+
+          if (isForcedMarch) {
+            // DC = 10 + 1 per hour past 8
+            const hoursOver = newHoursTotal - MAX_TRAVEL_HOURS;
+            dc = FORCED_MARCH_BASE_DC + hoursOver;
+            logMessage += ` Forced March! CON Save DC ${dc} to avoid exhaustion.`;
+          }
+
+          const newLog = {
+            id: Date.now().toString(),
+            day,
+            hour: newHoursTotal,
+            distanceDelta: distanceCovered,
+            description: logMessage,
+            isForcedMarch,
+            conSaveDC: isForcedMarch ? dc : undefined
+          };
+
+          setState(prev => ({
+            ...prev,
+            traveledDistance: Math.min(prev.totalDistance, prev.traveledDistance + distanceCovered),
+            hoursTraveledToday: newHoursTotal,
+            logs: [...prev.logs, newLog]
+          }));
+        };
+
+        const handleLongRest = () => {
+          setState(prev => ({
+            ...prev,
+            day: prev.day + 1,
+            hoursTraveledToday: 0,
+            logs: [...prev.logs, {
+              id: Date.now().toString(),
+              day: prev.day,
+              hour: prev.hoursTraveledToday,
+              distanceDelta: 0,
+              description: "Took a Long Rest. Day ends. Travel time reset.",
+              isForcedMarch: false
+            }]
+          }));
+        };
+
+        const handleReset = () => {
+          setState({
+            totalDistance: inputDistance,
+            traveledDistance: 0,
+            pace: TravelPace.NORMAL,
+            day: 1,
+            hoursTraveledToday: 0,
+            logs: [],
+            exhaustion: 0
+          });
+        };
+
+        // --- RENDER HELPERS ---
+        const remainingDistance = state.totalDistance - state.traveledDistance;
+        const isFinished = remainingDistance <= 0;
+        const hoursUntilForced = Math.max(0, MAX_TRAVEL_HOURS - state.hoursTraveledToday);
+
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="w-full max-w-4xl bg-parchment-100 rounded-lg shadow-2xl overflow-hidden border-4 border-parchment-300">
+              
+              {/* Header */}
+              <header className="bg-dragon-red text-parchment-100 p-6 text-center border-b-4 border-dragon-gold">
+                <h1 className="text-4xl font-serif font-black tracking-wider uppercase drop-shadow-md">
+                  Traveler's Trek
+                </h1>
+                <p className="font-sans text-parchment-300 mt-2 text-sm uppercase tracking-widest">
+                  D&D 5e Distance Tracker
+                </p>
+              </header>
+
+              <main className="p-6 md:p-8">
+                
+                {/* Configuration */}
+                <section className="bg-parchment-200 p-6 rounded-lg border border-parchment-300 mb-8 shadow-sm">
+                  <h2 className="text-2xl font-serif text-parchment-900 mb-4 border-b border-parchment-800 pb-2">
+                    Journey Configuration
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div className="flex flex-col">
+                      <label className="font-bold text-parchment-800 mb-1">Total Distance (Miles)</label>
+                      <input 
+                        type="number" 
+                        min="1"
+                        value={inputDistance} 
+                        onChange={handleDistanceChange}
+                        disabled={state.traveledDistance > 0}
+                        className="bg-white border-2 border-parchment-300 p-2 rounded font-mono text-lg focus:border-dragon-red outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="font-bold text-parchment-800 mb-1">Travel Pace</label>
+                      <div className="flex rounded-md shadow-sm" role="group">
+                        {Object.values(TravelPace).map((paceOption) => (
+                          <button
+                            key={paceOption}
+                            onClick={() => handlePaceChange(paceOption)}
+                            className={`
+                              flex-1 px-4 py-2 text-sm font-medium border border-parchment-800
+                              ${state.pace === paceOption 
+                                ? 'bg-dragon-red text-white' 
+                                : 'bg-parchment-100 text-parchment-900 hover:bg-parchment-200'}
+                              ${paceOption === TravelPace.SLOW ? 'rounded-l-lg' : ''}
+                              ${paceOption === TravelPace.FAST ? 'rounded-r-lg' : ''}
+                            `}
+                          >
+                            {paceOption}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-parchment-800 mt-2 italic font-serif">
+                        Effect: {PACE_RULES[state.pace].effect}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Progress Bar */}
+                <section className="mb-8">
+                  <ProgressBar current={state.traveledDistance} total={state.totalDistance} />
+                </section>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  
+                  {/* Action Panel */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="bg-parchment-800 text-parchment-100 p-4 rounded-lg shadow-lg">
+                      <div className="text-center mb-4">
+                        <div className="text-3xl font-serif font-bold">Day {state.day}</div>
+                        <div className="text-sm uppercase tracking-widest text-parchment-300">
+                          Hour {state.hoursTraveledToday}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Safe Hours Left:</span>
+                          <span className="font-bold text-dragon-gold">{hoursUntilForced}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Current Speed:</span>
+                          <span className="font-bold">{PACE_RULES[state.pace].speed} mph</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isFinished && (
+                      <div className="space-y-3">
+                        <button 
+                          onClick={() => travel(1)}
+                          className={`w-full py-3 rounded font-serif font-bold text-lg shadow-md transition-transform active:scale-95 border-2
+                            ${state.hoursTraveledToday >= MAX_TRAVEL_HOURS 
+                              ? 'bg-red-800 text-white border-red-900 hover:bg-red-700' 
+                              : 'bg-white text-parchment-900 border-parchment-300 hover:bg-parchment-100'}
+                          `}
+                        >
+                          {state.hoursTraveledToday >= MAX_TRAVEL_HOURS ? 'Forced March (+1 hr)' : 'Travel 1 Hour'}
+                        </button>
+
+                        <button 
+                          onClick={() => travel(Math.min(MAX_TRAVEL_HOURS, remainingDistance / PACE_RULES[state.pace].speed))}
+                          disabled={state.hoursTraveledToday >= MAX_TRAVEL_HOURS}
+                          className="w-full bg-dragon-gold text-parchment-900 border-2 border-yellow-600 py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-yellow-400 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Travel Normal Day
+                        </button>
+
+                        <button 
+                          onClick={handleLongRest}
+                          className="w-full bg-parchment-800 text-parchment-100 border-2 border-black py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-gray-700 transition-transform active:scale-95"
+                        >
+                          Take Long Rest (Next Day)
+                        </button>
+                      </div>
+                    )}
+
+                    {isFinished && (
+                      <div className="bg-green-100 border-2 border-green-600 p-4 rounded text-center">
+                        <h3 className="text-xl font-bold text-green-800 mb-2">Arrival!</h3>
+                        <p className="text-green-900">You have reached your destination.</p>
+                        <button 
+                          onClick={handleReset}
+                          className="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                        >
+                          Start New Journey
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Log Panel */}
+                  <div className="lg:col-span-2">
+                    <div className="bg-white border-2 border-parchment-300 rounded-lg h-96 flex flex-col shadow-inner">
+                      <div className="bg-parchment-200 p-2 border-b border-parchment-300 font-bold text-parchment-800 font-serif flex justify-between items-center">
+                        <span>Adventure Log</span>
+                        <span className="text-xs font-sans font-normal opacity-70">Newest at bottom</span>
+                      </div>
+                      <div 
+                        ref={logContainerRef}
+                        className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth"
+                      >
+                        {state.logs.length === 0 && (
+                          <p className="text-gray-400 text-center italic mt-10">The journey begins with a single step...</p>
+                        )}
+                        
+                        {state.logs.map((log) => (
+                          <div 
+                            key={log.id} 
+                            className={`p-3 rounded border-l-4 text-sm ${
+                              log.description.includes("Rest") 
+                                ? "bg-blue-50 border-blue-400" 
+                                : log.isForcedMarch 
+                                  ? "bg-red-50 border-red-500" 
+                                  : "bg-parchment-100 border-parchment-400"
+                            }`}
+                          >
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-bold text-parchment-900">Day {log.day}, Hour {log.hour}</span>
+                              {log.isForcedMarch && (
+                                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full border border-red-200 font-bold">
+                                  CON Save DC {log.conSaveDC}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-gray-700">{log.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </main>
+            </div>
+          </div>
+        );
+      };
+
+      // --- MOUNT ---
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
