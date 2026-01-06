@@ -20,11 +20,12 @@
           extend: {
             colors: {
               parchment: {
-                100: '#fdf6e3',
-                200: '#eee8d5',
-                300: '#d5c4a1',
-                800: '#3c3836',
-                900: '#1d2021',
+                // Dark Mode Palette
+                100: '#262626', // Main Card BG
+                200: '#333333', // Inner Section BG
+                300: '#4d4d4d', // Borders / Inputs
+                800: '#d4d4d4', // Body Text
+                900: '#ffffff', // Headings / High Contrast
               },
               dragon: {
                 red: '#8f2929',
@@ -47,14 +48,15 @@
     
     <style>
       body {
-        background-color: #1d2021;
-        background-image: radial-gradient(#3c3836 1px, transparent 1px);
+        background-color: #171717; /* Very dark background for body */
+        background-image: radial-gradient(#333333 1px, transparent 1px);
         background-size: 20px 20px;
+        color: #d4d4d4;
       }
-      /* Fantasy Scrollbar */
+      /* Fantasy Scrollbar - Dark Mode Adjusted */
       ::-webkit-scrollbar { width: 10px; }
-      ::-webkit-scrollbar-track { background: #d5c4a1; }
-      ::-webkit-scrollbar-thumb { background: #8f2929; border: 1px solid #3c3836; }
+      ::-webkit-scrollbar-track { background: #333333; }
+      ::-webkit-scrollbar-thumb { background: #8f2929; border: 1px solid #171717; }
     </style>
   <script type="importmap">
 {
@@ -74,8 +76,6 @@
       const { useState, useEffect, useRef } = React;
 
       // --- TYPES & ENUMS ---
-      // FIX: We use a const object instead of enum to ensure it exists at runtime 
-      // when using Babel Standalone in the browser.
       const TravelPace = {
         FAST: 'Fast',
         NORMAL: 'Normal',
@@ -83,22 +83,10 @@
       };
 
       // --- CONSTANTS ---
-      const PACE_RULES = {
-        [TravelPace.FAST]: {
-          speed: 4,
-          milesPerDay: 30,
-          effect: "-5 penalty to passive Wisdom (Perception)"
-        },
-        [TravelPace.NORMAL]: {
-          speed: 3,
-          milesPerDay: 24,
-          effect: "None"
-        },
-        [TravelPace.SLOW]: {
-          speed: 2,
-          milesPerDay: 18,
-          effect: "Able to use stealth"
-        }
+      const PACE_EFFECTS = {
+        [TravelPace.FAST]: "-5 penalty to passive Wisdom (Perception)",
+        [TravelPace.NORMAL]: "None",
+        [TravelPace.SLOW]: "Able to use stealth"
       };
 
       const MAX_TRAVEL_HOURS = 8;
@@ -117,7 +105,7 @@
             </div>
             
             {/* Track Background */}
-            <div className="h-6 bg-parchment-300 rounded-full border-2 border-parchment-800 relative shadow-inner overflow-hidden">
+            <div className="h-6 bg-parchment-300 rounded-full border-2 border-parchment-300 relative shadow-inner overflow-hidden">
               {/* Fill */}
               <div 
                 className="h-full bg-dragon-red transition-all duration-500 ease-out flex items-center justify-end pr-2"
@@ -127,9 +115,9 @@
               </div>
               
               {/* Distance Markers */}
-              <div className="absolute top-0 bottom-0 left-1/4 w-0.5 bg-parchment-800 opacity-20"></div>
-              <div className="absolute top-0 bottom-0 left-2/4 w-0.5 bg-parchment-800 opacity-20"></div>
-              <div className="absolute top-0 bottom-0 left-3/4 w-0.5 bg-parchment-800 opacity-20"></div>
+              <div className="absolute top-0 bottom-0 left-1/4 w-0.5 bg-parchment-100 opacity-20"></div>
+              <div className="absolute top-0 bottom-0 left-2/4 w-0.5 bg-parchment-100 opacity-20"></div>
+              <div className="absolute top-0 bottom-0 left-3/4 w-0.5 bg-parchment-100 opacity-20"></div>
             </div>
 
             {/* Avatar / Marker */}
@@ -137,7 +125,7 @@
               className="absolute top-4 w-10 h-10 -ml-5 transition-all duration-500 ease-out flex items-center justify-center"
               style={{ left: `${percentage}%` }}
             >
-              <div className="bg-parchment-100 border-2 border-dragon-gold rounded-full p-1 shadow-lg text-xl">
+              <div className="bg-parchment-200 border-2 border-dragon-gold rounded-full p-1 shadow-lg text-xl">
                 ♟️
               </div>
             </div>
@@ -163,6 +151,8 @@
         });
 
         const [inputDistance, setInputDistance] = useState(100);
+        const [baseSpeed, setBaseSpeed] = useState(30);
+        const [isVehicle, setIsVehicle] = useState(false);
         const logContainerRef = useRef(null);
 
         // Auto-scroll logs
@@ -179,13 +169,45 @@
           setState(prev => ({ ...prev, totalDistance: val }));
         };
 
+        const handleBaseSpeedChange = (e) => {
+          let val = parseInt(e.target.value) || 0;
+          if (isVehicle && val > 30) val = 30;
+          setBaseSpeed(val);
+        };
+
+        const toggleVehicle = () => {
+          const newState = !isVehicle;
+          setIsVehicle(newState);
+          if (newState && baseSpeed > 30) {
+            setBaseSpeed(30);
+          }
+        };
+
         const handlePaceChange = (pace) => {
           setState(prev => ({ ...prev, pace }));
         };
 
+        // --- HELPERS ---
+        const getSpeedInMph = (pace, speedFeet) => {
+          const normalSpeed = speedFeet / 10;
+          switch(pace) {
+            case TravelPace.FAST:
+              // Fast: +33%, rounded
+              return Math.round(normalSpeed * 1.3333);
+            case TravelPace.SLOW:
+              // Slow: -33%, rounded
+              return Math.round(normalSpeed * 0.6666);
+            case TravelPace.NORMAL:
+            default:
+              return normalSpeed;
+          }
+        };
+
+        const currentSpeedMph = getSpeedInMph(state.pace, baseSpeed);
+
         const travel = (hours) => {
           const { pace, hoursTraveledToday, day, traveledDistance } = state;
-          const speed = PACE_RULES[pace].speed;
+          const speed = currentSpeedMph;
           const distanceCovered = hours * speed;
           const newHoursTotal = hoursTraveledToday + hours;
           
@@ -193,7 +215,7 @@
           const forcedHours = Math.max(0, newHoursTotal - MAX_TRAVEL_HOURS);
           const isForcedMarch = newHoursTotal > MAX_TRAVEL_HOURS;
           
-          let logMessage = `Traveled ${hours} hour(s) at ${pace} pace (${distanceCovered} miles).`;
+          let logMessage = `Traveled ${hours} hour(s) at ${pace} pace (${distanceCovered.toFixed(1)} miles).`;
           let dc = 0;
 
           if (isForcedMarch) {
@@ -254,63 +276,107 @@
         const isFinished = remainingDistance <= 0;
         const hoursUntilForced = Math.max(0, MAX_TRAVEL_HOURS - state.hoursTraveledToday);
 
+        // Estimate Time Remaining
+        const totalHoursNeeded = remainingDistance > 0 && currentSpeedMph > 0 ? remainingDistance / currentSpeedMph : 0;
+        const daysRemaining = Math.floor(totalHoursNeeded / MAX_TRAVEL_HOURS);
+        const leftoverHours = Math.ceil(totalHoursNeeded % MAX_TRAVEL_HOURS);
+
+        // Order paces logically for UI
+        const sortedPaceOptions = [TravelPace.SLOW, TravelPace.NORMAL, TravelPace.FAST];
+
         return (
           <div className="min-h-screen flex items-center justify-center p-4">
             <div className="w-full max-w-4xl bg-parchment-100 rounded-lg shadow-2xl overflow-hidden border-4 border-parchment-300">
               
               {/* Header */}
-              <header className="bg-dragon-red text-parchment-100 p-6 text-center border-b-4 border-dragon-gold">
-                <h1 className="text-4xl font-serif font-black tracking-wider uppercase drop-shadow-md">
+              <header className="bg-dragon-red text-parchment-900 p-6 text-center border-b-4 border-dragon-gold">
+                <h1 className="text-4xl font-serif font-black tracking-wider uppercase drop-shadow-md text-white">
                   Traveler's Trek
                 </h1>
-                <p className="font-sans text-parchment-300 mt-2 text-sm uppercase tracking-widest">
+                <p className="font-sans text-parchment-900 mt-2 text-sm uppercase tracking-widest text-white/80">
                   D&D 5e Distance Tracker
                 </p>
               </header>
 
-              <main className="p-6 md:p-8">
+              <main className="p-6 md:p-8 text-parchment-800">
                 
                 {/* Configuration */}
                 <section className="bg-parchment-200 p-6 rounded-lg border border-parchment-300 mb-8 shadow-sm">
-                  <h2 className="text-2xl font-serif text-parchment-900 mb-4 border-b border-parchment-800 pb-2">
+                  <h2 className="text-2xl font-serif text-parchment-900 mb-4 border-b border-parchment-300 pb-2">
                     Journey Configuration
                   </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
                     
-                    <div className="flex flex-col">
-                      <label className="font-bold text-parchment-800 mb-1">Total Distance (Miles)</label>
-                      <input 
-                        type="number" 
-                        min="1"
-                        value={inputDistance} 
-                        onChange={handleDistanceChange}
-                        disabled={state.traveledDistance > 0}
-                        className="bg-white border-2 border-parchment-300 p-2 rounded font-mono text-lg focus:border-dragon-red outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
+                    {/* Column 1: Distance & Speed Settings */}
+                    <div className="space-y-4">
+                      <div className="flex flex-col">
+                        <label className="font-bold text-parchment-800 mb-1 text-sm">Distance (Miles)</label>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={inputDistance} 
+                          onChange={handleDistanceChange}
+                          disabled={state.traveledDistance > 0}
+                          className="bg-parchment-300 border-2 border-parchment-300 text-parchment-900 p-2 rounded font-mono text-lg focus:border-dragon-red outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder-parchment-800 w-full"
+                        />
+                      </div>
+                      
+                      <div className="flex gap-4">
+                        <div className="flex flex-col flex-1">
+                          <label className="font-bold text-parchment-800 mb-1 text-sm">Base Speed (ft)</label>
+                          <input 
+                            type="number" 
+                            min="1"
+                            step="1"
+                            value={baseSpeed} 
+                            onChange={handleBaseSpeedChange}
+                            className="bg-parchment-300 border-2 border-parchment-300 text-parchment-900 p-2 rounded font-mono text-lg focus:border-dragon-red outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder-parchment-800 w-full"
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col flex-1 justify-end">
+                           <button 
+                             onClick={toggleVehicle}
+                             className={`p-2 rounded border-2 flex items-center justify-center gap-2 text-xs font-bold transition-colors h-[48px]
+                               ${isVehicle 
+                                 ? 'bg-parchment-800 text-parchment-100 border-parchment-900' 
+                                 : 'bg-parchment-300 text-parchment-800 border-parchment-300 hover:bg-parchment-200'}
+                             `}
+                           >
+                             <span className="text-lg">🐎</span> {isVehicle ? 'Vehicle On' : 'Vehicle Off'}
+                           </button>
+                        </div>
+                      </div>
+                      {isVehicle && <p className="text-xs text-parchment-800 italic">Speed limited to 30 ft with vehicle.</p>}
                     </div>
 
+                    {/* Column 2: Pace Settings */}
                     <div className="flex flex-col">
-                      <label className="font-bold text-parchment-800 mb-1">Travel Pace</label>
+                      <label className="font-bold text-parchment-800 mb-1 text-sm">Travel Pace & Speed</label>
                       <div className="flex rounded-md shadow-sm" role="group">
-                        {Object.values(TravelPace).map((paceOption) => (
-                          <button
-                            key={paceOption}
-                            onClick={() => handlePaceChange(paceOption)}
-                            className={`
-                              flex-1 px-4 py-2 text-sm font-medium border border-parchment-800
-                              ${state.pace === paceOption 
-                                ? 'bg-dragon-red text-white' 
-                                : 'bg-parchment-100 text-parchment-900 hover:bg-parchment-200'}
-                              ${paceOption === TravelPace.SLOW ? 'rounded-l-lg' : ''}
-                              ${paceOption === TravelPace.FAST ? 'rounded-r-lg' : ''}
-                            `}
-                          >
-                            {paceOption}
-                          </button>
-                        ))}
+                        {sortedPaceOptions.map((paceOption) => {
+                          const mph = getSpeedInMph(paceOption, baseSpeed);
+                          return (
+                            <button
+                              key={paceOption}
+                              onClick={() => handlePaceChange(paceOption)}
+                              className={`
+                                flex-1 px-2 py-2 text-xs font-bold border border-parchment-300 flex flex-col items-center justify-center
+                                ${state.pace === paceOption 
+                                  ? 'bg-dragon-red text-white border-dragon-red' 
+                                  : 'bg-parchment-300 text-parchment-800 hover:bg-parchment-200 hover:text-parchment-900'}
+                                ${paceOption === TravelPace.SLOW ? 'rounded-l-lg' : ''}
+                                ${paceOption === TravelPace.FAST ? 'rounded-r-lg' : ''}
+                              `}
+                            >
+                              <span className="uppercase mb-1">{paceOption}</span>
+                              <span className="font-mono opacity-80 text-sm">{mph} mph</span>
+                            </button>
+                          )
+                        })}
                       </div>
-                      <p className="text-xs text-parchment-800 mt-2 italic font-serif">
-                        Effect: {PACE_RULES[state.pace].effect}
+                      <p className="text-xs text-parchment-800 mt-2 italic font-serif bg-parchment-300/30 p-2 rounded border border-parchment-300/50">
+                        <strong className="text-parchment-900">Effect:</strong> {PACE_EFFECTS[state.pace]}
                       </p>
                     </div>
                   </div>
@@ -325,23 +391,29 @@
                   
                   {/* Action Panel */}
                   <div className="lg:col-span-1 space-y-4">
-                    <div className="bg-parchment-800 text-parchment-100 p-4 rounded-lg shadow-lg">
-                      <div className="text-center mb-4">
-                        <div className="text-3xl font-serif font-bold">Day {state.day}</div>
-                        <div className="text-sm uppercase tracking-widest text-parchment-300">
+                    <div className="bg-parchment-200 text-parchment-800 p-4 rounded-lg shadow-lg border border-parchment-300">
+                      <div className="text-center mb-4 border-b border-parchment-300 pb-2">
+                        <div className="text-3xl font-serif font-bold text-parchment-900">Day {state.day}</div>
+                        <div className="text-sm uppercase tracking-widest text-parchment-800">
                           Hour {state.hoursTraveledToday}
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-sm">
                           <span>Safe Hours Left:</span>
-                          <span className="font-bold text-dragon-gold">{hoursUntilForced}</span>
+                          <span className="font-bold text-dragon-gold text-lg">{hoursUntilForced}</span>
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Current Speed:</span>
-                          <span className="font-bold">{PACE_RULES[state.pace].speed} mph</span>
-                        </div>
+                        
+                        {!isFinished && (
+                          <div className="bg-parchment-300/50 p-2 rounded text-xs">
+                             <span className="block font-bold text-parchment-900 mb-1">Estimated Arrival</span>
+                             <div className="flex items-baseline gap-2 font-mono text-parchment-800">
+                                <span>~ {daysRemaining} days, {leftoverHours} hrs</span>
+                             </div>
+                             <div className="text-[10px] opacity-60 mt-1">at current pace ({currentSpeedMph} mph)</div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -351,24 +423,24 @@
                           onClick={() => travel(1)}
                           className={`w-full py-3 rounded font-serif font-bold text-lg shadow-md transition-transform active:scale-95 border-2
                             ${state.hoursTraveledToday >= MAX_TRAVEL_HOURS 
-                              ? 'bg-red-800 text-white border-red-900 hover:bg-red-700' 
-                              : 'bg-white text-parchment-900 border-parchment-300 hover:bg-parchment-100'}
+                              ? 'bg-red-900 text-white border-red-800 hover:bg-red-800' 
+                              : 'bg-parchment-300 text-parchment-900 border-parchment-300 hover:bg-parchment-200'}
                           `}
                         >
                           {state.hoursTraveledToday >= MAX_TRAVEL_HOURS ? 'Forced March (+1 hr)' : 'Travel 1 Hour'}
                         </button>
 
                         <button 
-                          onClick={() => travel(Math.min(MAX_TRAVEL_HOURS, remainingDistance / PACE_RULES[state.pace].speed))}
+                          onClick={() => travel(Math.min(hoursUntilForced, remainingDistance / currentSpeedMph))}
                           disabled={state.hoursTraveledToday >= MAX_TRAVEL_HOURS}
-                          className="w-full bg-dragon-gold text-parchment-900 border-2 border-yellow-600 py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-yellow-400 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full bg-dragon-gold text-parchment-100 border-2 border-yellow-700 py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-yellow-600 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Travel Normal Day
                         </button>
 
                         <button 
                           onClick={handleLongRest}
-                          className="w-full bg-parchment-800 text-parchment-100 border-2 border-black py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-gray-700 transition-transform active:scale-95"
+                          className="w-full bg-parchment-200 text-parchment-800 border-2 border-parchment-300 py-3 rounded font-serif font-bold text-lg shadow-md hover:bg-parchment-300 transition-transform active:scale-95"
                         >
                           Take Long Rest (Next Day)
                         </button>
@@ -376,12 +448,12 @@
                     )}
 
                     {isFinished && (
-                      <div className="bg-green-100 border-2 border-green-600 p-4 rounded text-center">
-                        <h3 className="text-xl font-bold text-green-800 mb-2">Arrival!</h3>
-                        <p className="text-green-900">You have reached your destination.</p>
+                      <div className="bg-green-900/30 border-2 border-green-700 p-4 rounded text-center">
+                        <h3 className="text-xl font-bold text-green-400 mb-2">Arrival!</h3>
+                        <p className="text-green-200">You have reached your destination.</p>
                         <button 
                           onClick={handleReset}
-                          className="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                          className="mt-4 px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600"
                         >
                           Start New Journey
                         </button>
@@ -391,8 +463,8 @@
 
                   {/* Log Panel */}
                   <div className="lg:col-span-2">
-                    <div className="bg-white border-2 border-parchment-300 rounded-lg h-96 flex flex-col shadow-inner">
-                      <div className="bg-parchment-200 p-2 border-b border-parchment-300 font-bold text-parchment-800 font-serif flex justify-between items-center">
+                    <div className="bg-parchment-100 border-2 border-parchment-300 rounded-lg h-96 flex flex-col shadow-inner">
+                      <div className="bg-parchment-200 p-2 border-b border-parchment-300 font-bold text-parchment-900 font-serif flex justify-between items-center">
                         <span>Adventure Log</span>
                         <span className="text-xs font-sans font-normal opacity-70">Newest at bottom</span>
                       </div>
@@ -401,7 +473,7 @@
                         className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth"
                       >
                         {state.logs.length === 0 && (
-                          <p className="text-gray-400 text-center italic mt-10">The journey begins with a single step...</p>
+                          <p className="text-parchment-800 text-center italic mt-10">The journey begins with a single step...</p>
                         )}
                         
                         {state.logs.map((log) => (
@@ -409,21 +481,21 @@
                             key={log.id} 
                             className={`p-3 rounded border-l-4 text-sm ${
                               log.description.includes("Rest") 
-                                ? "bg-blue-50 border-blue-400" 
+                                ? "bg-blue-900/30 border-blue-500" 
                                 : log.isForcedMarch 
-                                  ? "bg-red-50 border-red-500" 
-                                  : "bg-parchment-100 border-parchment-400"
+                                  ? "bg-red-900/30 border-red-500" 
+                                  : "bg-parchment-300/30 border-parchment-300"
                             }`}
                           >
                             <div className="flex justify-between items-start mb-1">
                               <span className="font-bold text-parchment-900">Day {log.day}, Hour {log.hour}</span>
                               {log.isForcedMarch && (
-                                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full border border-red-200 font-bold">
+                                <span className="bg-red-900 text-red-200 text-xs px-2 py-0.5 rounded-full border border-red-700 font-bold">
                                   CON Save DC {log.conSaveDC}
                                 </span>
                               )}
                             </div>
-                            <p className="text-gray-700">{log.description}</p>
+                            <p className="text-parchment-800">{log.description}</p>
                           </div>
                         ))}
                       </div>
